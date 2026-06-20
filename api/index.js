@@ -1,5 +1,5 @@
 export default async function handler(request, response) {
-  // ১. গ্লোবাল CORS হেডার সেটআপ (যাতে প্লেয়ার ব্লক না খায়)
+  // ১. গ্লোবাল CORS হেডার সেটআপ
   response.setHeader("Access-Control-Allow-Origin", "*");
   response.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
   response.setHeader("Access-Control-Allow-Headers", "*");
@@ -8,12 +8,16 @@ export default async function handler(request, response) {
     return response.status(200).end();
   }
 
-  // ২. আপনার মেইন সোর্স ডোমেইন (এখানে /api অংশটি ক্লিন করা হয়েছে)
+  // ২. আপনার মেইন সোর্স ডোমেইন
   const targetDomain = "andro.evrenesoglu57.click";
   const targetBase = `https://${targetDomain}`;
   
-  // এখানে request.url থেকে '/api' অংশটি মুছে ফেলা হচ্ছে যাতে সোর্স সার্ভার সঠিক পাথ পায়
-  const cleanPath = request.url.replace(/^\/api/, '').split('?')[0];
+  // ইউআরএল পাথ থেকে /api অংশটি ক্লিন করা (যদি থাকে)
+  let cleanPath = request.url.split('?')[0];
+  if (cleanPath.startsWith('/api')) {
+    cleanPath = cleanPath.replace(/^\/api/, '');
+  }
+  
   const urlSearch = request.url.includes('?') ? request.url.substring(request.url.indexOf('?')) : '';
   const targetUrl = `${targetBase}${cleanPath}${urlSearch}`;
   const lowerPath = cleanPath.toLowerCase();
@@ -40,12 +44,11 @@ export default async function handler(request, response) {
       return response.status(res.status).send(`Source Error: ${res.statusText}`);
     }
 
-    // ৫. スマート ক্যাশিং পলিসি (Strictly Vercel Edge Optimized)
+    // ৫. স্মার্ট ক্যাশিং পলিসি
     if (lowerPath.endsWith('.m3u8')) {
       response.setHeader("Content-Type", "application/vnd.apple.mpegurl");
       response.setHeader("Cache-Control", "public, max-age=1, stale-while-revalidate=1");
     } else if (lowerPath.endsWith('.ts') || lowerPath.endsWith('.jpg') || lowerPath.endsWith('.jpeg')) {
-      // ভিডিও সেগমেন্ট ও ইমেজ চিরদিনের জন্য Vercel Edge-এ ক্যাশ থাকবে
       response.setHeader("Cache-Control", "public, max-age=31536000, immutable");
       if (res.headers.get("content-type")) {
         response.setHeader("Content-Type", res.headers.get("content-type"));
