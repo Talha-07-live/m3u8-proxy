@@ -1,5 +1,5 @@
 export default async function handler(request, response) {
-  // ১. গ্লোবাল CORS হেডার সেটআপ
+  // ১. গ্লোবাল CORS হেডার সেটআপ (যাতে প্লেয়ার ব্লক না খায়)
   response.setHeader("Access-Control-Allow-Origin", "*");
   response.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
   response.setHeader("Access-Control-Allow-Headers", "*");
@@ -8,15 +8,15 @@ export default async function handler(request, response) {
     return response.status(200).end();
   }
 
-  // ২. আপনার মেইন সোর্স ডোমেইন
+  // ২. আপনার মেইন সোর্স ডোমেইন (এখানে /api অংশটি ক্লিন করা হয়েছে)
   const targetDomain = "andro.evrenesoglu57.click";
   const targetBase = `https://${targetDomain}`;
   
-  // ইউআরএল থেকে পাথ এবং কোয়েরি প্যারামিটার আলাদা করা
-  const urlPath = request.url.split('?')[0];
+  // এখানে request.url থেকে '/api' অংশটি মুছে ফেলা হচ্ছে যাতে সোর্স সার্ভার সঠিক পাথ পায়
+  const cleanPath = request.url.replace(/^\/api/, '').split('?')[0];
   const urlSearch = request.url.includes('?') ? request.url.substring(request.url.indexOf('?')) : '';
-  const targetUrl = `${targetBase}${urlPath}${urlSearch}`;
-  const lowerPath = urlPath.toLowerCase();
+  const targetUrl = `${targetBase}${cleanPath}${urlSearch}`;
+  const lowerPath = cleanPath.toLowerCase();
 
   // ৩. রিকোয়েস্ট হেডার মাস্কিং ও টিউনিং
   const modifiedHeaders = {};
@@ -40,13 +40,13 @@ export default async function handler(request, response) {
       return response.status(res.status).send(`Source Error: ${res.statusText}`);
     }
 
-    // ৫. স্মার্ট ক্যাশিং পলিসি (Strictly Vercel Edge Optimized)
+    // ৫. スマート ক্যাশিং পলিসি (Strictly Vercel Edge Optimized)
     if (lowerPath.endsWith('.m3u8')) {
       response.setHeader("Content-Type", "application/vnd.apple.mpegurl");
       response.setHeader("Cache-Control", "public, max-age=1, stale-while-revalidate=1");
     } else if (lowerPath.endsWith('.ts') || lowerPath.endsWith('.jpg') || lowerPath.endsWith('.jpeg')) {
+      // ভিডিও সেগমেন্ট ও ইমেজ চিরদিনের জন্য Vercel Edge-এ ক্যাশ থাকবে
       response.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-      // কন্টেন্ট টাইপ পাস করে দেওয়া যাতে ব্রাউজার দ্রুত রিড করতে পারে
       if (res.headers.get("content-type")) {
         response.setHeader("Content-Type", res.headers.get("content-type"));
       }
@@ -54,12 +54,9 @@ export default async function handler(request, response) {
       response.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     }
 
-    // ৬. ডাটা স্ট্রিম ডাউনস্ট্রিম করা (Memory-Safe Optimized)
-    // res.body সরাসরি একটি ReadableStream, যা মেমোরি ফুল না করে হাই-স্পিডে ডাটা পাস করে
+    // ৬. ডাটা স্ট্রিম ডাউনস্ট্রিম করা (Memory-Safe Stream)
     if (res.body) {
       const reader = res.body.getReader();
-      
-      // ডাটা চাঙ্ক (Chunk) বাই চাঙ্ক রাইট করা
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -67,7 +64,6 @@ export default async function handler(request, response) {
       }
       return response.end();
     } else {
-      // যদি বডি না থাকে (যেমন HEAD রিকোয়েস্ট)
       const data = await res.arrayBuffer();
       return response.status(res.status).send(Buffer.from(data));
     }
