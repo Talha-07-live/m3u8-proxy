@@ -12,7 +12,6 @@ export default async function handler(request, response) {
   const targetDomain = "andro.evrenesoglu57.click";
   const targetBase = `https://${targetDomain}`;
   
-  // ইউআরএল পাথ থেকে /api অংশটি ক্লিন করা (যদি থাকে)
   let cleanPath = request.url.split('?')[0];
   if (cleanPath.startsWith('/api')) {
     cleanPath = cleanPath.replace(/^\/api/, '');
@@ -22,7 +21,7 @@ export default async function handler(request, response) {
   const targetUrl = `${targetBase}${cleanPath}${urlSearch}`;
   const lowerPath = cleanPath.toLowerCase();
 
-  // ৩. রিকোয়েস্ট হেডার মাস্কিং ও টিউনিং
+  // ৩. রিকোয়েস্ট হেডার মাস্কিং
   const modifiedHeaders = {};
   for (const [key, value] of Object.entries(request.headers)) {
     modifiedHeaders[key] = value;
@@ -34,7 +33,7 @@ export default async function handler(request, response) {
   modifiedHeaders["user-agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
 
   try {
-    // ৪. সোর্স সার্ভার থেকে হাই-স্পিড ডাটা ফেচিং
+    // ৪. ডাটা ফেচিং
     const res = await fetch(targetUrl, {
       method: request.method,
       headers: modifiedHeaders
@@ -44,12 +43,15 @@ export default async function handler(request, response) {
       return response.status(res.status).send(`Source Error: ${res.statusText}`);
     }
 
-    // ৫. স্মার্ট ক্যাশিং পলিসি
+    // ৫. আপনার নতুন ৩ দিনের ক্যাশিং পলিসি + বাফার টিউনিং
     if (lowerPath.endsWith('.m3u8')) {
       response.setHeader("Content-Type", "application/vnd.apple.mpegurl");
-      response.setHeader("Cache-Control", "public, max-age=1, stale-while-revalidate=1");
+      // প্লেলিস্ট ১ সেকেন্ড ক্যাশ থাকবে এবং ব্যাকগ্রাউন্ডে রিভ্যালিডেট হবে
+      response.setHeader("Cache-Control", "public, max-age=1, stale-while-revalidate=2");
     } else if (lowerPath.endsWith('.ts') || lowerPath.endsWith('.jpg') || lowerPath.endsWith('.jpeg')) {
-      response.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      // ভিডিও সেগমেন্ট ও ইমেজ Vercel CDN-এ ঠিক ৩ দিন (259200 সেকেন্ড) থাকবে, তারপর অটো ডিলিট হবে।
+      // stale-while-revalidate=60 ব্যবহারের কারণে এটি বাফারিং অনেক কমিয়ে দেবে
+      response.setHeader("Cache-Control", "public, max-age=259200, stale-while-revalidate=60");
       if (res.headers.get("content-type")) {
         response.setHeader("Content-Type", res.headers.get("content-type"));
       }
@@ -57,7 +59,7 @@ export default async function handler(request, response) {
       response.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     }
 
-    // ৬. ডাটা স্ট্রিম ডাউনস্ট্রিম করা (Memory-Safe Stream)
+    // ৬. ডাটা স্ট্রিম ডাউনস্ট্রিম করা (High-Speed Pipe)
     if (res.body) {
       const reader = res.body.getReader();
       while (true) {
