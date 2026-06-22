@@ -13,7 +13,16 @@ export default async function handler(request) {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
-  // ১. আপনার মেইন সোর্স এবং সিডিএন ডোমেইন সেটিংস
+  // 🔒 গুরুত্বপূর্ণ: এখানে yourdomain.com এর জায়গায় আপনার আসল সাইটের ডোমেইন দিন
+  // লোকালহোস্টে টেস্ট করার জন্য 'localhost' রাখা হয়েছে
+  const allowedDomains = ["yourdomain.com", "localhost", "127.0.0.1"];
+  const requestReferer = request.headers.get("referer") || "";
+  
+  const isAllowed = allowedDomains.some(domain => requestReferer.includes(domain)) || !requestReferer;
+  if (!isAllowed) {
+    return new Response("Access Denied: Embedded Player Only", { status: 403, headers: corsHeaders });
+  }
+
   const targetDomain = "andro.evrenesoglu57.click";
   const fastlyDomain = "babaylazoryarisirlar1806.global.ssl.fastly.net";
   
@@ -24,24 +33,26 @@ export default async function handler(request) {
     cleanPath = cleanPath.replace(/^\/api/, '');
   }
 
-  // ২. রিকোয়েস্ট কোন ডোমেইনে পাঠাতে হবে তা নির্ধারণ করা
-  // যদি পাথের ভেতর ফাস্টলি সিডিএন এর ফাইল খোঁজা হয়, তবে ফাস্টলি সার্ভারে রিকোয়েস্ট যাবে
+  const lowerPath = cleanPath.toLowerCase();
+  const isM3u8 = lowerPath.endsWith('.m3u8');
+  const isSegment = lowerPath.endsWith('.ts') || lowerPath.endsWith('.jpg') || lowerPath.endsWith('.jpeg');
+  
+  if (!isM3u8 && !isSegment) {
+    return new Response("Unauthorized Request Pattern", { status: 403, headers: corsHeaders });
+  }
+
   let isFastlySegment = cleanPath.includes('androstreamlivetb_');
   let targetUrl = isFastlySegment 
     ? `https://${fastlyDomain}${cleanPath}${url.search}`
     : `https://${targetDomain}${cleanPath}${url.search}`;
 
-  const lowerPath = cleanPath.toLowerCase();
-
-  // ৩. হেডার মাস্কিং
   const modifiedHeaders = new Headers();
   for (const [key, value] of request.headers.entries()) {
-    if (!['host', 'origin', 'referer'].includes(key.toLowerCase())) {
+    if (!['host', 'origin', 'referer', 'accept-encoding'].includes(key.toLowerCase())) {
       modifiedHeaders.set(key, value);
     }
   }
   
-  // সোর্স ডোমেইন অনুযায়ী সঠিক হোস্ট সেট করা
   const currentHost = isFastlySegment ? fastlyDomain : targetDomain;
   modifiedHeaders.set("host", currentHost);
   modifiedHeaders.set("origin", `https://${currentHost}`);
@@ -59,20 +70,22 @@ export default async function handler(request) {
       return new Response(`Source Error: ${res.statusText}`, { status: res.status, headers: corsHeaders });
     }
 
+    // ⚠️ Vercel Edge 50MB Limit Protection
+    const contentLength = res.headers.get("content-length");
+    if (contentLength && parseInt(contentLength) > 50 * 1024 * 1024) {
+      return new Response("File size exceeds Vercel 50MB Edge Limit", { status: 500, headers: corsHeaders });
+    }
+
     const responseHeaders = new Headers(corsHeaders);
     if (res.headers.get("content-type")) {
       responseHeaders.set("Content-Type", res.headers.get("content-type"));
     }
 
-    // ৪. ক্যাশ কন্ট্রোল ও প্লেলিস্ট মডিফিকেশন ম্যাজিক
-    if (lowerPath.endsWith('.m3u8')) {
+    if (isM3u8) {
       responseHeaders.set("Content-Type", "application/vnd.apple.mpegurl");
-      responseHeaders.set("Cache-Control", "public, max-age=1, stale-while-revalidate=2");
+      responseHeaders.set("Cache-Control", "no-cache, no-store, must-revalidate");
       
-      // .m3u8 ফাইলের ভেতরের টেক্সট রিড করা
       let playlistText = await res.text();
-      
-      // 🎯 আসল ট্রিক: প্লেলিস্টের ভেতরের Fastly লিঙ্কগুলোকে কেটে Vercel প্রক্সি লিঙ্ক দিয়ে রিপ্লেস করা
       const proxyBaseUrl = `https://${url.host}/api`;
       const regex = new RegExp(`https://${fastlyDomain}`, 'g');
       playlistText = playlistText.replace(regex, proxyBaseUrl);
@@ -80,15 +93,14 @@ export default async function handler(request) {
       return new Response(playlistText, { status: 200, headers: responseHeaders });
     } 
     
-    // ৫. ভিডিও ইমেজ সেগমেন্ট (.jpg) ৩ দিনের জন্য ক্যাশ করা
-    if (lowerPath.endsWith('.ts') || lowerPath.endsWith('.jpg') || lowerPath.endsWith('.jpeg')) {
-      responseHeaders.set("Cache-Control", "public, max-age=259200, stale-while-revalidate=60");
+    if (isSegment) {
+      responseHeaders.set("Cache-Control", "public, max-age=10, s-maxage=259200, stale-while-revalidate=60");
       return new Response(res.body, { status: res.status, headers: responseHeaders });
     }
 
     return new Response(res.body, { status: res.status, headers: responseHeaders });
 
   } catch (error) {
-    return new Response("Vercel Edge Rewriter Error: " + error.message, { status: 502, headers: corsHeaders });
+    return new Response("Vercel Edge Hyper-Drive Error: " + error.message, { status: 502, headers: corsHeaders });
   }
 }
