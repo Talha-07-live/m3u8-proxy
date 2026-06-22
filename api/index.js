@@ -13,16 +13,9 @@ export default async function handler(request) {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
-  // 🔒 গুরুত্বপূর্ণ: এখানে yourdomain.com এর জায়গায় আপনার আসল সাইটের ডোমেইন দিন
-  // লোকালহোস্টে টেস্ট করার জন্য 'localhost' রাখা হয়েছে
-  const allowedDomains = ["yourdomain.com", "localhost", "127.0.0.1"];
+  // 🔒 লোকালহোস্ট এবং যেকোনো ডিরেক্ট লিঙ্কের জন্য সেফ সাইড রিকোয়েস্ট পাসিং
   const requestReferer = request.headers.get("referer") || "";
   
-  const isAllowed = allowedDomains.some(domain => requestReferer.includes(domain)) || !requestReferer;
-  if (!isAllowed) {
-    return new Response("Access Denied: Embedded Player Only", { status: 403, headers: corsHeaders });
-  }
-
   const targetDomain = "andro.evrenesoglu57.click";
   const fastlyDomain = "babaylazoryarisirlar1806.global.ssl.fastly.net";
   
@@ -70,7 +63,6 @@ export default async function handler(request) {
       return new Response(`Source Error: ${res.statusText}`, { status: res.status, headers: corsHeaders });
     }
 
-    // ⚠️ Vercel Edge 50MB Limit Protection
     const contentLength = res.headers.get("content-length");
     if (contentLength && parseInt(contentLength) > 50 * 1024 * 1024) {
       return new Response("File size exceeds Vercel 50MB Edge Limit", { status: 500, headers: corsHeaders });
